@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoggerModule } from '../logger/logger.module';
+import { SdkAiService } from './providers/sdk-ai.service';
 
 @Module({
-  imports: [HttpModule, ConfigModule, LoggerModule],
+  imports: [ConfigModule, LoggerModule],
   controllers: [AiController],
-  providers: [AiService, PrismaService],
-  exports: [AiService],
+  providers: [AiService, SdkAiService, PrismaService],
+  exports: [AiService, SdkAiService],
 })
 export class AiModule {}

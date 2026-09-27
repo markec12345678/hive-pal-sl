@@ -190,14 +190,12 @@ describe('AssistantService', () => {
           }) as never,
       );
 
-      // Two NDJSON chunks, the second split across a buffer boundary.
-      const ndjson = Readable.from([
-        Buffer.from(
-          '{"message":{"content":"Your bees "},"done":false}\n{"message":{"con',
-        ),
-        Buffer.from('tent":"look healthy."},"done":true}\n'),
+      // Plain text chunks from the SDK-backed stream.
+      const textStream = Readable.from([
+        Buffer.from('Your bees '),
+        Buffer.from('look healthy.'),
       ]);
-      ai.streamChat.mockResolvedValue(ndjson);
+      ai.streamChat.mockResolvedValue(textStream);
 
       const { res, writes, end } = makeRes();
       await service.streamMessage(

@@ -11,27 +11,11 @@ import { apiaryReadScope, apiaryWriteScope } from '../common';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { Prisma, TranscriptionStatus } from '@/prisma/client';
+import { SdkAiService } from '../ai/providers/sdk-ai.service';
 
 export interface UploadAudioDto {
   fileName: string;
   duration?: string; // Comes as string from form-data
-}
-
-interface AiProcessUploadResponse {
-  status?: string;
-  transcript?: {
-    text?: string | null;
-  };
-  inspectionDraft?: Prisma.InputJsonValue | null;
-  files?: {
-    transcript_txt?: string;
-    transcript_json?: string;
-    recommendation_json?: string;
-  };
-}
-
-interface AiRecommendResponse {
-  [key: string]: unknown;
 }
 
 export interface AudioResponse {
@@ -83,15 +67,9 @@ const ALLOWED_MIME_TYPES = [
   'audio/wav',
 ];
 
-type AiProcessingMode = 'pull' | 'push' | 'auto';
-
 @Injectable()
 export class InspectionAudioService {
   private maxFileSize: number;
-  private aiServiceBaseUrl: string;
-  private aiApiKey: string;
-  private aiProcessingMode: AiProcessingMode;
-  private pullFallbackMinutes: number;
 
   private resolveBackendBaseUrl(): string {
     const backendPublicUrl =
@@ -118,30 +96,11 @@ export class InspectionAudioService {
     private storageService: StorageService,
     private logger: CustomLoggerService,
     private configService: ConfigService,
+    private sdkAi: SdkAiService,
   ) {
     this.maxFileSize = Number(
       this.configService.get('INSPECTION_AUDIO_MAX_FILE_SIZE') ?? 10485760,
     );
-
-    this.aiServiceBaseUrl =
-      this.configService.get<string>('AI_SERVICE_BASE_URL') ??
-      'http://hivepal-ai:8008';
-
-    this.aiApiKey = this.configService.get<string>('AI_API_KEY') ?? '';
-
-    const mode = (
-      this.configService.get<string>('AI_PROCESSING_MODE') ?? 'push'
-    ).toLowerCase();
-    this.aiProcessingMode =
-      mode === 'pull' || mode === 'auto' ? (mode as AiProcessingMode) : 'push';
-
-    this.pullFallbackMinutes = Number(
-      this.configService.get('AI_PULL_FALLBACK_MINUTES') ?? 10,
-    );
-  }
-
-  private hasPushConfig(): boolean {
-    return Boolean(this.aiServiceBaseUrl && this.aiApiKey);
   }
 
   /**
@@ -471,33 +430,22 @@ export class InspectionAudioService {
         transcriptionStatus: 'PENDING',
         transcriptionError: null,
         transcriptionRetries: 0,
-        transcriptionClaimedAt: null,
-        transcriptionLeaseUntil: null,
-        transcriptionWorkerTokenId: null,
         analysisStatus: 'NONE',
         analysisResult: Prisma.JsonNull,
         analysisError: null,
         analysisCompletedAt: null,
         analysisRetries: 0,
-        analysisClaimedAt: null,
-        analysisLeaseUntil: null,
-        analysisWorkerTokenId: null,
       },
     });
 
-    if (this.aiProcessingMode === 'push') {
-      if (!this.hasPushConfig()) {
-        this.logger.warn({
-          message:
-            'AI_PROCESSING_MODE=push but AI service not configured; leaving job PENDING',
-          audioId,
-        });
-      } else {
-        void this.runAiAnalysisInBackground(audioId, audio.storageKey);
-      }
+    if (this.sdkAi.isEnabled()) {
+      void this.runAiAnalysisInBackground(audioId, audio.storageKey);
+    } else {
+      this.logger.warn({
+        message: 'AI_ENABLED is not "true"; audio analysis job left PENDING',
+        audioId,
+      });
     }
-    // pull / auto: leave job PENDING for a worker. Auto mode falls back via
-    // scheduled job (`runPullFallbackSweep`) after AI_PULL_FALLBACK_MINUTES.
 
     return { status: 'PENDING' };
   }
@@ -553,24 +501,17 @@ export class InspectionAudioService {
         analysisError: null,
         analysisCompletedAt: null,
         analysisRetries: 0,
-        analysisClaimedAt: null,
-        analysisLeaseUntil: null,
-        analysisWorkerTokenId: null,
       },
     });
 
-    if (this.aiProcessingMode === 'push') {
-      if (!this.hasPushConfig()) {
-        this.logger.warn({
-          message:
-            'AI_PROCESSING_MODE=push but AI service not configured; leaving analysis PENDING',
-          audioId,
-        });
-      } else {
-        void this.runAnalysisOnlyInBackground(audioId, trimmed);
-      }
+    if (this.sdkAi.isEnabled()) {
+      void this.runAnalysisOnlyInBackground(audioId, trimmed);
+    } else {
+      this.logger.warn({
+        message: 'AI_ENABLED is not "true"; analysis job left PENDING',
+        audioId,
+      });
     }
-    // pull / auto: leave PENDING for a worker to claim via claimAnalysis.
 
     this.logger.log({
       message: 'Transcription edited and analysis re-queued',
@@ -591,29 +532,17 @@ export class InspectionAudioService {
         data: { analysisStatus: 'PROCESSING' },
       });
 
-      const response = await fetch(`${this.aiServiceBaseUrl}/recommend`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.aiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ transcript }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`AI service returned ${response.status}`);
-      }
-
-      const rawResult: unknown = await response.json();
-      const result = rawResult as AiRecommendResponse;
+      const { draft, analysisError } =
+        await this.sdkAi.analyzeTranscript(transcript);
 
       await this.prisma.inspectionAudio.update({
         where: { id: audioId },
         data: {
-          analysisStatus: 'COMPLETED',
-          analysisResult: result as Prisma.InputJsonValue,
-          analysisError: null,
-          analysisCompletedAt: new Date(),
+          analysisStatus: analysisError ? 'FAILED' : 'COMPLETED',
+          analysisResult:
+            (draft as unknown as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+          analysisError,
+          analysisCompletedAt: analysisError ? null : new Date(),
         },
       });
     } catch (error) {
@@ -631,34 +560,6 @@ export class InspectionAudioService {
         audioId,
         error: message,
       });
-    }
-  }
-
-  /**
-   * For mode=auto: find audios that have been waiting too long for a worker
-   * and process them via the push path instead.
-   */
-  async runPullFallbackSweep(): Promise<void> {
-    if (this.aiProcessingMode !== 'auto') return;
-    if (!this.hasPushConfig()) return;
-
-    const cutoff = new Date(Date.now() - this.pullFallbackMinutes * 60 * 1000);
-    const stuck = await this.prisma.inspectionAudio.findMany({
-      where: {
-        transcriptionStatus: 'PENDING',
-        analysisStatus: 'NONE',
-        createdAt: { lt: cutoff },
-      },
-      select: { id: true, storageKey: true },
-      take: 5,
-    });
-
-    for (const audio of stuck) {
-      this.logger.log({
-        message: 'Pull job timed out; falling back to push',
-        audioId: audio.id,
-      });
-      void this.runAiAnalysisInBackground(audio.id, audio.storageKey);
     }
   }
 
@@ -685,37 +586,34 @@ export class InspectionAudioService {
         );
       }
 
-      const fileArrayBuffer = await audioResponse.arrayBuffer();
+      const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
 
-      const formData = new FormData();
-      const fileBlob = new Blob([fileArrayBuffer], { type: 'audio/webm' });
-      formData.append('file', fileBlob, 'audio.webm');
-
-      const response = await fetch(`${this.aiServiceBaseUrl}/process-upload`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.aiApiKey}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`AI service returned ${response.status}`);
-      }
-
-      const rawResult: unknown = await response.json();
-      const result = rawResult as AiProcessUploadResponse;
+      // Stage 1: speech-to-text via the SDK provider.
+      const transcript = await this.sdkAi.transcribe(audioBuffer);
 
       await this.prisma.inspectionAudio.update({
         where: { id: audioId },
         data: {
-          transcription: result.transcript?.text ?? null,
+          transcription: transcript.text,
           transcriptionStatus: 'COMPLETED',
           transcriptionError: null,
-          analysisStatus: 'COMPLETED',
-          analysisResult: result.inspectionDraft ?? Prisma.JsonNull,
-          analysisError: null,
-          analysisCompletedAt: new Date(),
+          analysisStatus: 'PROCESSING',
+        },
+      });
+
+      // Stage 2: transcript -> structured inspection draft via the SDK LLM.
+      const { draft, analysisError } = await this.sdkAi.analyzeTranscript(
+        transcript.text,
+      );
+
+      await this.prisma.inspectionAudio.update({
+        where: { id: audioId },
+        data: {
+          analysisStatus: analysisError ? 'FAILED' : 'COMPLETED',
+          analysisResult:
+            (draft as unknown as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+          analysisError,
+          analysisCompletedAt: analysisError ? null : new Date(),
         },
       });
     } catch (error) {

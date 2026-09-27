@@ -3,19 +3,17 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { firstValueFrom } from 'rxjs';
-import axios from 'axios';
-import FormData from 'form-data';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.interface';
 import { ApiaryScopeFilter } from '../interface/request-with.apiary';
 import { apiaryWriteScope } from '../common';
+import { Prisma } from '@/prisma/client';
+import { SdkAiService } from './providers/sdk-ai.service';
 
 export interface AiTranscript {
   text: string;
-  language?: string;
+  language?: string | null;
   segments?: unknown[];
   [key: string]: unknown;
 }
@@ -28,16 +26,20 @@ export interface AiProcessUploadResponse {
   status: string;
   transcript: AiTranscript;
   inspectionDraft: AiInspectionDraft;
-  files?: Record<string, string>;
+  analysisError?: string | null;
 }
 
+/**
+ * Runs the audio -> transcript -> inspection draft pipeline in-process via
+ * the SDK provider (replaces the former external Python AI service).
+ */
 @Injectable()
 export class AiService {
   constructor(
-    private readonly http: HttpService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly sdkAi: SdkAiService,
   ) {}
 
   async analyzeInspectionAudio(
@@ -45,8 +47,7 @@ export class AiService {
     audioId: string,
     filter: ApiaryScopeFilter,
   ): Promise<AiProcessUploadResponse> {
-    const enabled = this.config.get<string>('AI_ENABLED') === 'true';
-    if (!enabled) {
+    if (!this.sdkAi.isEnabled()) {
       throw new BadRequestException('AI is disabled');
     }
 
@@ -68,40 +69,61 @@ export class AiService {
       900,
     );
 
-    const audioResponse = await axios.get<ArrayBuffer>(downloadUrl, {
-      responseType: 'arraybuffer',
-    });
-
-    const form = new FormData();
-    form.append('file', Buffer.from(audioResponse.data), {
-      filename: audio.fileName,
-      contentType: audio.mimeType,
-    });
-
-    const aiUrl = `${this.config.get<string>('AI_SERVICE_URL')}/process-upload`;
-
-    const result = await firstValueFrom(
-      this.http.post<AiProcessUploadResponse>(aiUrl, form, {
-        headers: {
-          ...form.getHeaders(),
-          Authorization: `Bearer ${this.config.get<string>('AI_SERVICE_API_KEY')}`,
-        },
-        timeout: Number(this.config.get('AI_REQUEST_TIMEOUT_MS') || 300000),
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-      }),
-    );
-
-    const aiResponse: AiProcessUploadResponse = result.data;
+    const audioResponse = await fetch(downloadUrl);
+    if (!audioResponse.ok) {
+      throw new BadRequestException(
+        `Failed to fetch audio file from storage (${audioResponse.status})`,
+      );
+    }
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
 
     await this.prisma.inspectionAudio.update({
       where: { id: audio.id },
-      data: {
-        transcriptionStatus: 'COMPLETED',
-        transcription: aiResponse.transcript.text,
-      },
+      data: { transcriptionStatus: 'PROCESSING' },
     });
 
-    return aiResponse;
+    try {
+      const transcript = await this.sdkAi.transcribe(audioBuffer);
+      const { draft, analysisError } = await this.sdkAi.analyzeTranscript(
+        transcript.text,
+      );
+
+      await this.prisma.inspectionAudio.update({
+        where: { id: audio.id },
+        data: {
+          transcriptionStatus: 'COMPLETED',
+          transcription: transcript.text,
+          transcriptionError: null,
+          analysisStatus: 'COMPLETED',
+          analysisResult:
+            (draft as unknown as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+          analysisError,
+          analysisCompletedAt: new Date(),
+        },
+      });
+
+      return {
+        status: 'completed',
+        transcript: {
+          text: transcript.text,
+          language: transcript.language,
+          segments: transcript.segments,
+        },
+        inspectionDraft: draft as unknown as AiInspectionDraft,
+        analysisError,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.prisma.inspectionAudio
+        .update({
+          where: { id: audio.id },
+          data: {
+            transcriptionStatus: 'FAILED',
+            transcriptionError: message,
+          },
+        })
+        .catch(() => undefined);
+      throw error;
+    }
   }
 }

@@ -31,6 +31,7 @@
     "@aws-sdk/s3-request-presigner": "^3.947.0",
     "@better-auth/passkey": "^1.6.12",
     "@nestjs/axios": "^4.0.0",
+    "z-ai-web-dev-sdk": "^0.0.18",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.1.6",

@@ -154,38 +154,19 @@ export class AssistantService {
     }
 
     let assistantText = '';
-    let buffer = '';
 
-    const flushLine = (line: string) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      try {
-        const chunk = JSON.parse(trimmed) as {
-          message?: { content?: string };
-          done?: boolean;
-        };
-        const token = chunk.message?.content ?? '';
+    // streamChat() resolves to a Node Readable emitting plain text chunks
+    // (SDK-backed, see SdkAiService.streamChat). Each chunk is forwarded to
+    // the browser as an SSE "token" event, exactly like before.
+    await new Promise<void>((resolve) => {
+      stream.on('data', (data: Buffer | string) => {
+        const token = data.toString('utf-8');
         if (token) {
           assistantText += token;
           this.writeSse(res, { type: 'token', content: token });
         }
-      } catch {
-        // Ignore non-JSON keepalive lines.
-      }
-    };
-
-    await new Promise<void>((resolve) => {
-      stream.on('data', (data: Buffer) => {
-        buffer += data.toString('utf-8');
-        let idx: number;
-        while ((idx = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 1);
-          flushLine(line);
-        }
       });
       stream.on('end', () => {
-        if (buffer) flushLine(buffer);
         resolve();
       });
       stream.on('error', (err: Error) => {
