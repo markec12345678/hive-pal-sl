@@ -1834,16 +1834,16 @@
         },
         "transcribe": {
           "title": "Automatic transcription",
-          "body": "Whisper-powered speech-to-text turns every recording into a searchable transcript attached to the inspection. Multilingual out of the box."
+          "body": "Speech-to-text turns every recording into a searchable transcript attached to the inspection. Multilingual out of the box."
         },
         "draft": {
           "title": "AI-drafted notes",
-          "body": "Local LLMs extract queen sightings, brood patterns, treatments, and observations into a pre-filled inspection — you just review and save."
+          "body": "AI extracts queen sightings, brood patterns, treatments, and observations into a pre-filled inspection — you just review and save."
         }
       },
-      "assuranceLead": "Your recordings, your models.",
-      "assuranceBody": "The AI stack runs on open-source models (faster-whisper + Ollama) and can be self-hosted alongside your data — or run as a pull worker on your home machine.",
-      "assuranceNote": "No third-party cloud required"
+      "assuranceLead": "Voice AI is optional.",
+      "assuranceBody": "AI stays off unless your server enables it. When used, the recording is sent to the configured AI service just to draft the inspection — everything else stays on your server.",
+      "assuranceNote": "Off by default"
     },
     "landing": {
       "meta": {
@@ -2092,7 +2092,7 @@
             },
             "privacyAI": {
               "title": "Privacy-first AI",
-              "body": "The voice and AI stack uses open models (faster-whisper + Ollama) and can run on your own hardware — no third-party cloud required."
+              "body": "Voice AI is optional and stays off unless the server enables it. When used, recordings are processed solely to draft your inspection."
             },
             "multilingual": {
               "title": "Multilingual",

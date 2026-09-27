@@ -87,8 +87,8 @@ These are layered on top of a deployment with `-f` and are entirely optional:
 |------|------|
 | `apps/backend/docker-compose.yml` | Local **PostgreSQL + MinIO** for development (`pnpm db:up`) — MinIO console on `9001` |
 | `apps/hivescale/docker-compose.hivescale.yaml` | An optional **HiveScale** backend sidecar — see [HiveScale](../user-guide/hivescale) |
-| `apps/ai-app/docker-compose.worker.yml` | The **AI worker** (audio transcription + analysis) with a bundled Ollama model server (`11434`) — see [Audio & AI Transcription](../user-guide/audio-ai) |
-| `apps/ai-app/docker-compose.ai.ollama.yml` | An alternative AI service + Ollama setup (`8008`, `11434`) |
+
+> There is no AI add-on container: audio transcription and AI analysis run inside the backend itself. Set `AI_ENABLED=true` to turn them on — see [Audio & AI Transcription](../user-guide/audio-ai).
 
 For example, to run production with the HiveScale sidecar:
 

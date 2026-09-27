@@ -162,7 +162,7 @@ describe('AssistantService', () => {
       expect(ai.streamChat).not.toHaveBeenCalled();
     });
 
-    it('streams Ollama NDJSON as SSE tokens then persists the reply', async () => {
+    it('streams provider text chunks as SSE tokens then persists the reply', async () => {
       repository.findThread.mockResolvedValue(thread);
       repository.findThreadWithMessages.mockResolvedValue({
         ...thread,
