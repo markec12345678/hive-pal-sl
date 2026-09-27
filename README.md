@@ -9,7 +9,7 @@ A modern beekeeping management application designed for both mobile and desktop 
 
 ## Features
 
-- **AI Voice Inspections**: Record audio at the hive and let AI transcribe it and draft structured inspection notes — powered by open models (faster-whisper + Ollama) that you can self-host
+- **AI Voice Inspections**: Record audio at the hive and let AI transcribe it and draft structured inspection notes — powered by the built-in AI SDK provider (no external AI service or GPU box required)
 - **Apiary Management**: Create and track multiple apiaries with location and weather information
 - **Hive Tracking**: Monitor hives, their status, boxes, and frame configuration
 - **Inspection Workflows**: Record detailed inspections with observations, photos, treatments, and actions
@@ -124,6 +124,8 @@ The application will be available at http://localhost.
 | `VITE_SENTRY_ENVIRONMENT`   | Frontend Sentry environment                                                    |
 | `HIVESCALE_API_BASE_URL`    | Base URL of the HiveScale backend for scale integration                        |
 | `HIVESCALE_SERVICE_API_KEY` | Shared service key used by HivePal to call HiveScale                           |
+| `AI_ENABLED`                | Set to `true` to enable AI voice inspections and the assistant (SDK-based)     |
+| `AI_REQUEST_TIMEOUT_MS`     | Timeout for AI SDK requests (default `600000`)                                 |
 
 ## Development
 

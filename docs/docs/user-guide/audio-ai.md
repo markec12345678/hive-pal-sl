@@ -27,20 +27,20 @@ When you save, the recording is uploaded with the inspection.
 
 Processing happens in two stages after upload:
 
-1. **Transcription** — a worker converts your recording to text. The audio card shows the status: *waiting → transcribing → completed* (or *failed*).
-2. **AI analysis** — once transcribed, you can trigger analysis. The AI reads the transcript and suggests values for inspection fields (ratings, observations, actions).
+1. **Transcription** — the backend converts your recording to text via the built-in AI SDK provider. The audio card shows the status: *waiting → transcribing → completed* (or *failed*).
+2. **AI analysis** — the backend sends the transcript to the AI and suggests values for inspection fields (ratings, observations, actions).
 
 You stay in control: review the transcription (edit it if needed), then **merge** the AI's suggestions into the inspection form. Nothing is saved to your inspection until you accept it.
 
 ## Requirements
 
 - **File storage** must be enabled (local or S3) to store recordings — see [Configuration → File Storage](../self-hosting/configuration#file-storage).
-- The transcription/analysis worker must be running for processing to complete.
+- The backend environment variable `AI_ENABLED` must be set to `true`.
 
 ## FAQ
 
 **Is my audio kept?**
-Recordings are stored in your configured file storage (your own server with local storage, or your S3 bucket). As a self-hosted app, the data stays under your control.
+Recordings are stored in your configured file storage (your own server with local storage, or your S3 bucket). As a self-hosted app, the data stays under your control. Note that recordings are sent to the external AI service for transcription and analysis when AI features are used.
 
 **Can I edit the transcription?**
 Yes. The transcribed text is editable before you run analysis or merge it into the inspection.
