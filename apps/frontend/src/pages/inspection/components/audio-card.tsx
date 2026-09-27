@@ -15,7 +15,7 @@ import {
   useInspectionAudioAiResult,
   useUpdateInspectionAudioTranscription,
 } from '@/api/hooks/useInspectionAudioAi';
-import { useWorkerStatus } from '@/api/hooks/useWorkerTokens';
+import { useFeatures } from '@/api/hooks/useFeatures';
 import { useNavigate } from 'react-router-dom';
 
 interface AudioCardProps {
@@ -162,7 +162,7 @@ function AiPanel({
       {showWaitingForWorker && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span className="inline-block h-2 w-2 rounded-full bg-gray-400" />
-          No worker online — job will be picked up when a worker connects.
+          AI is disabled — set AI_ENABLED=true to process this recording.
         </div>
       )}
 
@@ -361,10 +361,10 @@ function RecordingRow({
 
   const stageLabel = deriveStageLabel(transcriptionStatus, analysisStatus);
 
-  const { data: workerStatus } = useWorkerStatus();
+  const { data: features } = useFeatures();
   const showWaitingForWorker =
     (transcriptionStatus === 'PENDING' || analysisStatus === 'PENDING') &&
-    (workerStatus?.workersOnline ?? 0) === 0;
+    features?.aiEnabled === false;
 
   const resultQuery = useInspectionAudioAiResult(
     inspectionId,
